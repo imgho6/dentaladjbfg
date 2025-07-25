@@ -926,27 +926,94 @@ class DragonBot:
         
         await update.message.reply_text(help_text, parse_mode='Markdown')
 
-    def run(self):
-        """Run the bot"""
+    async def run_bot(self):
+        """Main bot runner with proper async setup"""
         from telegram.ext import ApplicationBuilder
         
-        # Build application with modern approach
-        application = ApplicationBuilder().token(self.token).build()
-        
-        # Add handlers
-        application.add_handler(CommandHandler("start", self.start_command))
-        application.add_handler(CommandHandler("status", self.status_command))
-        application.add_handler(CommandHandler("shop", self.shop_command))
-        application.add_handler(CommandHandler("profile", self.profile_command))
-        application.add_handler(CommandHandler("adventure", self.adventure_command))
-        application.add_handler(CommandHandler("help", self.help_command))
-        application.add_handler(CallbackQueryHandler(self.handle_callback))
-        
-        # Start background tasks
-        application.job_queue.run_repeating(self.background_maintenance, interval=300, first=10)
-        
-        print(f"🐲 {self.dragon_name} прокинувся і готовий до пригод!")
-        application.run_polling()
+        try:
+            # Build application with error handling
+            application = ApplicationBuilder().token(self.token).build()
+            
+            # Add handlers
+            application.add_handler(CommandHandler("start", self.start_command))
+            application.add_handler(CommandHandler("status", self.status_command))
+            application.add_handler(CommandHandler("shop", self.shop_command))
+            application.add_handler(CommandHandler("profile", self.profile_command))
+            application.add_handler(CommandHandler("adventure", self.adventure_command))
+            application.add_handler(CommandHandler("help", self.help_command))
+            application.add_handler(CallbackQueryHandler(self.handle_callback))
+            
+            # Start background tasks
+            if application.job_queue:
+                application.job_queue.run_repeating(
+                    self.background_maintenance, 
+                    interval=300, 
+                    first=10
+                )
+            
+            print(f"🐲 {self.dragon_name} прокинувся і готовий до пригод!")
+            
+            # Initialize the application
+            await application.initialize()
+            await application.start()
+            
+            # Start polling
+            await application.updater.start_polling()
+            
+            # Keep running
+            print("Бот запущено! Натисніть Ctrl+C для зупинки...")
+            try:
+                import signal
+                import asyncio
+                
+                # Handle shutdown gracefully
+                stop_signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
+                loop = asyncio.get_running_loop()
+                
+                def signal_handler():
+                    print("\n🐲 Фаєр засинає... Зупинка бота.")
+                    loop.create_task(self.shutdown(application))
+                
+                for sig in stop_signals:
+                    loop.add_signal_handler(sig, signal_handler)
+                
+                # Wait indefinitely
+                await asyncio.Event().wait()
+                
+            except KeyboardInterrupt:
+                print("\n🐲 Фаєр засинає... Зупинка бота.")
+                await self.shutdown(application)
+                
+        except Exception as e:
+            print(f"❌ Помилка запуску бота: {e}")
+            print("💡 Спробуйте:")
+            print("1. Перевірити токен бота")
+            print("2. Встановити python-telegram-bot версії 20.7: pip install python-telegram-bot==20.7")
+            print("3. Використовувати Python 3.11 або 3.12 замість 3.13")
+    
+    async def shutdown(self, application):
+        """Graceful shutdown"""
+        try:
+            await application.updater.stop()
+            await application.stop()
+            await application.shutdown()
+            print("✅ Бот зупинено коректно")
+        except Exception as e:
+            print(f"⚠️ Помилка при зупинці: {e}")
+    
+    def run(self):
+        """Run the bot with proper error handling"""
+        try:
+            asyncio.run(self.run_bot())
+        except KeyboardInterrupt:
+            print("\n👋 До побачення!")
+        except Exception as e:
+            print(f"❌ Критична помилка: {e}")
+            print("💡 Рекомендації:")
+            print("1. Встановіть python-telegram-bot версії 20.7:")
+            print("   pip install python-telegram-bot==20.7")
+            print("2. Перевірте версію Python (рекомендується 3.11 або 3.12)")
+            print("3. Перевірте токен бота")
 
     async def background_maintenance(self, context: ContextTypes.DEFAULT_TYPE):
         """Background maintenance tasks (called by job queue)"""
@@ -995,7 +1062,7 @@ if __name__ == "__main__":
     if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
         print("❌ Помилка: Встановіть токен бота!")
         print("1. Створіть бота через @BotFather в Telegram")
-        print("2. Замініть 'YOUR_BOT_TOKEN_HERE' на ваш токен")
+        print("2. 7957837080:AAFXn32Ejf_i0DX3Yuo1d87BI-50IefwMK8 'YOUR_BOT_TOKEN_HERE' на ваш токен")
         exit(1)
     
     # Create and run bot
