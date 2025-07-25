@@ -1054,6 +1054,45 @@ class DragonBot:
             logger.error(f"Background maintenance error: {e}")
 
 
+# Alternative simple runner for compatibility issues
+def run_bot_simple(token: str):
+    """Simple bot runner for compatibility issues"""
+    import asyncio
+    from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
+    
+    async def main():
+        # Create bot instance
+        bot = DragonBot(token)
+        
+        # Simple application setup
+        app = ApplicationBuilder().token(token).build()
+        
+        # Add handlers
+        app.add_handler(CommandHandler("start", bot.start_command))
+        app.add_handler(CommandHandler("status", bot.status_command))
+        app.add_handler(CommandHandler("shop", bot.shop_command))
+        app.add_handler(CommandHandler("profile", bot.profile_command))
+        app.add_handler(CommandHandler("adventure", bot.adventure_command))
+        app.add_handler(CommandHandler("help", bot.help_command))
+        app.add_handler(CallbackQueryHandler(bot.handle_callback))
+        
+        print(f"🐲 {bot.dragon_name} прокинувся! (простий режим)")
+        
+        # Use simple polling
+        async with app:
+            await app.start()
+            await app.updater.start_polling()
+            try:
+                await asyncio.Event().wait()
+            except KeyboardInterrupt:
+                print("\n🐲 Фаєр засинає...")
+            finally:
+                await app.updater.stop()
+                await app.stop()
+    
+    asyncio.run(main())
+
+
 # Main execution
 if __name__ == "__main__":
     # Replace with your actual bot token
@@ -1062,9 +1101,30 @@ if __name__ == "__main__":
     if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
         print("❌ Помилка: Встановіть токен бота!")
         print("1. Створіть бота через @BotFather в Telegram")
-        print("2. 7957837080:AAFXn32Ejf_i0DX3Yuo1d87BI-50IefwMK8 'YOUR_BOT_TOKEN_HERE' на ваш токен")
+        print("2. Замініть 'YOUR_BOT_TOKEN_HERE' на ваш токен")
         exit(1)
     
-    # Create and run bot
-    bot = DragonBot(BOT_TOKEN)
-    bot.run()
+    # Try to determine the best way to run
+    print("🚀 Запуск бота...")
+    
+    try:
+        # Try advanced runner first
+        bot = DragonBot(BOT_TOKEN)
+        bot.run()
+    except Exception as e:
+        print(f"⚠️ Основний запуск не вдався: {e}")
+        print("🔄 Пробую простий режим...")
+        try:
+            run_bot_simple(BOT_TOKEN)
+        except Exception as e2:
+            print(f"❌ Простий режим також не вдався: {e2}")
+            print("\n💡 Рекомендації для вирішення:")
+            print("1. Встановіть конкретну версію:")
+            print("   pip uninstall python-telegram-bot")
+            print("   pip install python-telegram-bot==20.7")
+            print("2. Перевірте версію Python:")
+            print("   python --version")
+            print("   (рекомендується 3.11 або 3.12)")
+            print("3. Якщо використовуєте 3.13, спробуйте:")
+            print("   pip install python-telegram-bot==21.0")
+            print("4. Перевірте токен бота в @BotFather")
