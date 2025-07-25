@@ -1058,7 +1058,7 @@ class DragonBot:
 # Main execution
 if __name__ == "__main__":
     # Replace with your bot token from @BotFather
-    BOT_TOKEN = ""
+    BOT_TOKEN = "7957837080:AAFXn32Ejf_i0DX3Yuo1d87BI-50IefwMK8"
     
     if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
         print("❌ Будь ласка, вставте ваш токен бота від @BotFather")
