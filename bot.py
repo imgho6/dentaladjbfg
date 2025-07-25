@@ -66,9 +66,6 @@ class DragonBot:
         
         # Initialize database
         self.init_database()
-        
-        # Start background tasks
-        asyncio.create_task(self.background_tasks())
 
     def init_database(self):
         """Initialize SQLite database for player data"""
