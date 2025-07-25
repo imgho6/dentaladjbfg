@@ -1096,7 +1096,7 @@ def run_bot_simple(token: str):
 # Main execution
 if __name__ == "__main__":
     # Replace with your actual bot token
-    BOT_TOKEN = "7957837080:AAFXn32Ejf_i0DX3Yuo1d87BI-50IefwMK8"
+    BOT_TOKEN = "7957837080:AAHT-AjnZYtBcBDDjL3MHURnV6XphI3KDrs"
     
     if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
         print("❌ Помилка: Встановіть токен бота!")
