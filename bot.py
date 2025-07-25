@@ -510,4 +510,558 @@ class DragonBot:
         
         keyboard = []
         for item_id, item_data in self.items.items():
-            item_name = item_id.replace('
+            item_name = item_id.replace('_', ' ').title()
+            affordable = "✅" if player['gold'] >= item_data['price'] else "❌"
+            button_text = f"{affordable} {item_name} - {item_data['price']}💰"
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"buy_{item_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="status")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.callback_query:
+            await update.callback_query.edit_message_text(shop_text, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(shop_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def profile_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show player profile"""  
+        user = update.effective_user
+        player = self.get_player(user.id, user.username)
+        
+        inventory_text = ""
+        if player['inventory']:
+            for item, count in player['inventory'].items():
+                item_name = item.replace('_', ' ').title()
+                inventory_text += f"• {item_name}: {count}\n"
+        else:
+            inventory_text = "Порожньо"
+        
+        affection_level = "💔 Ворог" if player['dragon_affection'] < 0 else \
+                         "😐 Незнайомець" if player['dragon_affection'] < 20 else \
+                         "😊 Знайомий" if player['dragon_affection'] < 50 else \
+                         "❤️ Друг" if player['dragon_affection'] < 100 else \
+                         "💖 Найкращий друг"
+        
+        profile_text = f"""
+👤 **Профіль гравця**
+
+🏷️ Ім'я: {player['username']}
+💰 Золото: {player['gold']}
+⭐ Рівень: {player['level']}
+📈 Досвід: {player['exp']}
+🏆 Репутація: {player['reputation']}
+
+🐲 Відносини з {self.dragon_name}: {affection_level} ({player['dragon_affection']})
+
+⚔️ PvP статистика:
+🏆 Перемоги: {player['pvp_wins']}
+💀 Поразки: {player['pvp_losses']}
+
+🎒 **Інвентар:**
+{inventory_text}
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("🎁 Щоденна нагорода", callback_data="daily_reward")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="status")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.callback_query:
+            await update.callback_query.edit_message_text(profile_text, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(profile_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def adventure_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show adventure/battle interface"""
+        user = update.effective_user
+        player = self.get_player(user.id, user.username)
+        
+        if self.dragon_stats['energy'] < 20:
+            adventure_text = f"🐲 {self.dragon_name} занадто втомлений для пригод!\n⚡ Енергія: {self.dragon_stats['energy']}/100\n\n💤 Дайте йому відпочити або дайте магічне зілля."
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="status")]]
+        else:
+            adventure_text = f"""
+🗡️ **Пригоди чекають!**
+
+🐲 {self.dragon_name} готовий до бою!
+⚡ Енергія: {self.dragon_stats['energy']}/100
+💪 Сила: {self.dragon_stats['strength']}
+
+🏞️ **Виберіть локацію:**
+"""
+            keyboard = [
+                [InlineKeyboardButton("🌲 Темний ліс", callback_data="explore_forest")],
+                [InlineKeyboardButton("🏰 Підземелля замку", callback_data="explore_dungeon")],
+                [InlineKeyboardButton("⚔️ Арена (PvP)", callback_data="pvp_arena")],
+                [InlineKeyboardButton("🔙 Назад", callback_data="status")]
+            ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.callback_query:
+            await update.callback_query.edit_message_text(adventure_text, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(adventure_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def explore_location(self, location: str, player: Dict) -> str:
+        """Handle location exploration"""
+        if self.dragon_stats['energy'] < 20:
+            return "❌ Дракон занадто втомлений!"
+        
+        # Energy cost
+        self.dragon_stats['energy'] -= 20
+        
+        # Random encounter
+        if random.random() < 0.7:  # 70% chance of monster encounter
+            monster_name = random.choice(list(self.monsters.keys()))
+            return await self.battle_monster(monster_name, player)
+        else:
+            # Treasure find
+            treasure_gold = random.randint(10, 30)
+            player['gold'] += treasure_gold
+            self.dragon_stats['exp'] += 5
+            
+            treasure_messages = [
+                f"🎒 {self.dragon_name} знайшов скарб! +{treasure_gold} золота!",
+                f"💎 Знайдено стародавню монету! +{treasure_gold} золота!",
+                f"📦 У старому сундуку виявилося золото! +{treasure_gold} золота!"
+            ]
+            
+            await self.check_level_up()
+            self.save_player(player)
+            self.save_dragon_state()
+            
+            return random.choice(treasure_messages)
+
+    async def battle_monster(self, monster_name: str, player: Dict) -> str:
+        """Handle monster battle"""
+        monster = self.monsters[monster_name].copy()
+        dragon_health = self.dragon_stats['health']
+        
+        battle_log = [f"⚔️ **Битва з {monster_name.replace('_', ' ')}!**\n"]
+        
+        # Battle simulation
+        rounds = 0
+        while monster['health'] > 0 and dragon_health > 0 and rounds < 10:
+            rounds += 1
+            
+            # Dragon attack
+            dragon_damage = random.randint(self.dragon_stats['strength'] - 3, self.dragon_stats['strength'] + 3)
+            
+            # Apply abilities
+            if 'Вогняне дихання' in self.dragon_stats['abilities'] and random.random() < 0.3:
+                dragon_damage = int(dragon_damage * 1.5)
+                battle_log.append(f"🔥 {self.dragon_name} використав Вогняне дихання! {dragon_damage} урону!")
+            elif 'Лють' in self.dragon_stats['abilities'] and dragon_health < self.dragon_stats['max_health'] * 0.3:
+                dragon_damage = int(dragon_damage * 1.3)
+                battle_log.append(f"😡 {self.dragon_name} впав у лють! {dragon_damage} урону!")
+            else:
+                battle_log.append(f"🗡️ {self.dragon_name} атакує! {dragon_damage} урону!")
+            
+            monster['health'] -= dragon_damage
+            
+            if monster['health'] <= 0:
+                break
+            
+            # Monster attack
+            monster_damage = random.randint(monster['attack'] - 2, monster['attack'] + 2)
+            
+            # Dodge chance based on intelligence
+            if random.randint(1, 100) <= self.dragon_stats['intelligence']:
+                battle_log.append(f"🌪️ {self.dragon_name} ухилився від атаки!")
+            else:
+                dragon_health -= monster_damage
+                battle_log.append(f"💥 {monster_name.replace('_', ' ')} атакує! {monster_damage} урону!")
+        
+        # Battle result
+        if dragon_health > 0:
+            # Victory
+            self.dragon_stats['health'] = dragon_health
+            self.dragon_stats['exp'] += monster['exp']
+            player['gold'] += monster['reward']
+            player['reputation'] += 1
+            
+            battle_log.append(f"\n🎉 **Перемога!**")
+            battle_log.append(f"📈 +{monster['exp']} досвіду")
+            battle_log.append(f"💰 +{monster['reward']} золота")
+            battle_log.append(f"🏆 +1 репутація")
+            
+            await self.check_level_up()
+        else:
+            # Defeat
+            self.dragon_stats['health'] = 1  # Don't let dragon die completely
+            battle_log.append(f"\n💀 **Поразка!**")
+            battle_log.append(f"😢 {self.dragon_name} поранений і потребує лікування...")
+        
+        self.save_player(player)
+        self.save_dragon_state()
+        
+        return "\n".join(battle_log)
+
+    async def handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle inline keyboard callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        user = query.from_user
+        player = self.get_player(user.id, user.username)
+        
+        # Handle different callback data
+        if query.data == "status":
+            await self.status_command(update, context)
+            
+        elif query.data == "shop":
+            await self.shop_command(update, context)
+            
+        elif query.data == "profile":
+            await self.profile_command(update, context)
+            
+        elif query.data == "adventure":
+            await self.adventure_command(update, context)
+            
+        elif query.data.startswith("buy_"):
+            item_id = query.data[4:]  # Remove "buy_" prefix
+            await self.handle_purchase(item_id, player, update)
+            
+        elif query.data == "feed_menu":
+            await self.show_feed_menu(player, update)
+            
+        elif query.data.startswith("feed_"):
+            item_id = query.data[5:]  # Remove "feed_" prefix
+            result = await self.feed_dragon(item_id, player)
+            await query.edit_message_text(result, parse_mode='Markdown',
+                                        reply_markup=InlineKeyboardMarkup([[
+                                            InlineKeyboardButton("📊 Стан дракона", callback_data="status")
+                                        ]]))
+            
+        elif query.data == "explore_forest":
+            result = await self.explore_location("forest", player)
+            await query.edit_message_text(result, parse_mode='Markdown',
+                                        reply_markup=InlineKeyboardMarkup([[
+                                            InlineKeyboardButton("🔙 Назад до пригод", callback_data="adventure")
+                                        ]]))
+            
+        elif query.data == "explore_dungeon":
+            result = await self.explore_location("dungeon", player)
+            await query.edit_message_text(result, parse_mode='Markdown',
+                                        reply_markup=InlineKeyboardMarkup([[
+                                            InlineKeyboardButton("🔙 Назад до пригод", callback_data="adventure")
+                                        ]]))
+            
+        elif query.data == "play":
+            await self.handle_play(player, update)
+            
+        elif query.data == "rest":
+            await self.handle_rest(player, update)
+            
+        elif query.data == "daily_reward":
+            await self.handle_daily_reward(player, update)
+
+    async def handle_purchase(self, item_id: str, player: Dict, update: Update):
+        """Handle item purchase"""
+        if item_id not in self.items:
+            await update.callback_query.edit_message_text("❌ Невідомий предмет!")
+            return
+        
+        item_data = self.items[item_id]
+        
+        if player['gold'] < item_data['price']:
+            await update.callback_query.edit_message_text(
+                f"❌ Недостатньо золота!\nПотрібно: {item_data['price']} 💰\nУ вас: {player['gold']} 💰",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Назад до магазину", callback_data="shop")
+                ]])
+            )
+            return
+        
+        # Process purchase
+        player['gold'] -= item_data['price']
+        if item_id not in player['inventory']:
+            player['inventory'][item_id] = 0
+        player['inventory'][item_id] += 1
+        
+        self.save_player(player)
+        
+        item_name = item_id.replace('_', ' ').title()
+        purchase_text = f"✅ **Покупку завершено!**\n\n🛒 Куплено: {item_name}\n💰 Витрачено: {item_data['price']} золота\n💰 Залишилось: {player['gold']} золота\n\n{item_data['description']}"
+        
+        keyboard = [
+            [InlineKeyboardButton("🍖 Використати зараз", callback_data=f"feed_{item_id}")],
+            [InlineKeyboardButton("🛒 Продовжити покупки", callback_data="shop")],
+            [InlineKeyboardButton("📊 Стан дракона", callback_data="status")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(purchase_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def show_feed_menu(self, player: Dict, update: Update):
+        """Show feeding menu with player's inventory"""
+        if not player['inventory']:
+            feed_text = "🎒 У вас немає предметів для годування!\n\n🛒 Відвідайте магазин, щоб купити їжу для дракона."
+            keyboard = [[InlineKeyboardButton("🛒 Магазин", callback_data="shop")]]
+        else:
+            feed_text = f"🍖 **Чим погодувати {self.dragon_name}?**\n\n🎒 Ваш інвентар:\n"
+            
+            keyboard = []
+            for item_id, count in player['inventory'].items():
+                if item_id in self.items:
+                    item_name = item_id.replace('_', ' ').title()
+                    feed_text += f"• {item_name}: {count}\n"
+                    keyboard.append([InlineKeyboardButton(f"🍖 {item_name} (x{count})", callback_data=f"feed_{item_id}")])
+            
+            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="status")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(feed_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_play(self, player: Dict, update: Update):
+        """Handle play interaction"""
+        if self.dragon_stats['energy'] < 10:
+            result = f"😴 {self.dragon_name} занадто втомлений для ігор!\n⚡ Енергія: {self.dragon_stats['energy']}/100"
+        else:
+            self.dragon_stats['energy'] -= 10
+            mood_boost = random.randint(5, 15)
+            self.dragon_stats['mood'] = min(100, self.dragon_stats['mood'] + mood_boost)
+            player['dragon_affection'] += 3
+            
+            play_responses = [
+                f"🎮 Ви граєте з {self.dragon_name}! Він радісно літає навколо!",
+                f"🏃 {self.dragon_name} веселиться і ганяється за своїм хвостом!",
+                f"🎾 Ви кидаєте м'яч, а {self.dragon_name} приносить його назад!",
+                f"🤸 {self.dragon_name} показує свої акробатичні трюки!"
+            ]
+            
+            result = random.choice(play_responses)
+            result += f"\n\n😊 Настрій: +{mood_boost} ({self.dragon_stats['mood']}/100)"
+            result += f"\n❤️ Прихильність: +3 ({player['dragon_affection']})"
+            
+            self.save_player(player)
+            self.save_dragon_state()
+        
+        keyboard = [[InlineKeyboardButton("📊 Стан дракона", callback_data="status")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(result, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_rest(self, player: Dict, update: Update):
+        """Handle rest interaction"""
+        energy_restore = min(30, 100 - self.dragon_stats['energy'])
+        self.dragon_stats['energy'] = min(100, self.dragon_stats['energy'] + 30)
+        
+        # Small health restoration if dragon has high affection
+        health_restore = 0
+        if player['dragon_affection'] > 50 and self.dragon_stats['health'] < self.dragon_stats['max_health']:
+            health_restore = min(10, self.dragon_stats['max_health'] - self.dragon_stats['health'])
+            self.dragon_stats['health'] += health_restore
+        
+        result = f"💤 {self.dragon_name} мирно спить і відновлює сили...\n\n"
+        result += f"⚡ Енергія: +{energy_restore} ({self.dragon_stats['energy']}/100)"
+        
+        if health_restore > 0:
+            result += f"\n❤️ Здоров'я: +{health_restore} ({self.dragon_stats['health']}/{self.dragon_stats['max_health']})"
+            result += f"\n\n💝 {self.dragon_name} швидше одужує завдяки вашій турботі!"
+        
+        self.save_dragon_state()
+        
+        keyboard = [[InlineKeyboardButton("📊 Стан дракона", callback_data="status")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(result, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_daily_reward(self, player: Dict, update: Update):
+        """Handle daily reward claiming"""
+        from datetime import date
+        
+        today = date.today()
+        
+        # Check if reward already claimed today
+        if 'last_daily' in player and player['last_daily'] == str(today):
+            result = "❌ Ви вже отримали щоденну нагороду сьогодні!\n⏰ Поверніться завтра за новою нагородою."
+        else:
+            # Give daily reward
+            gold_reward = random.randint(20, 50)
+            exp_reward = random.randint(10, 25)
+            
+            player['gold'] += gold_reward
+            player['exp'] += exp_reward
+            player['last_daily'] = str(today)
+            
+            # Small chance of bonus item
+            bonus_item = None
+            if random.random() < 0.2:  # 20% chance
+                bonus_items = ['хліб', 'лікувальна_трава', 'медовуха']
+                bonus_item = random.choice(bonus_items)
+                if bonus_item not in player['inventory']:
+                    player['inventory'][bonus_item] = 0
+                player['inventory'][bonus_item] += 1
+            
+            result = f"🎁 **Щоденна нагорода!**\n\n"
+            result += f"💰 +{gold_reward} золота\n"
+            result += f"📈 +{exp_reward} досвіду\n"
+            
+            if bonus_item:
+                bonus_name = bonus_item.replace('_', ' ').title()
+                result += f"🎁 Бонус: {bonus_name}!"
+            
+            result += f"\n\n💰 Всього золота: {player['gold']}"
+            
+            self.save_player(player)
+        
+        keyboard = [[InlineKeyboardButton("👤 Профіль", callback_data="profile")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(result, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show help information"""
+        help_text = f"""
+🏰 **Довідка по грі з драконом {self.dragon_name}**
+
+🎮 **Основні команди:**
+/start - почати гру
+/status - стан дракона
+/shop - магазин предметів
+/profile - ваш профіль
+/adventure - пригоди та бої
+/help - ця довідка
+
+🐲 **Про дракона:**
+• {self.dragon_name} - живий дракончик, який потребує турботи
+• Годуйте його, граєте з ним, відправляйте в пригоди
+• Він росте, розвивається та отримує нові здібності
+• Якщо не годувати 15 днів - він може померти!
+
+⚔️ **Бойова система:**
+• Відправте дракона в пригоди для битв з монстрами
+• Перемоги дають досвід, золото та репутацію
+• Різні здібності допомагають у боях
+
+🛒 **Економіка:**
+• Заробляйте золото в пригодах
+• Купуйте їжу та предмети в магазині
+• Отримуйте щоденні нагороди
+
+❤️ **Відносини:**
+• Ваші дії впливають на ставлення дракона до вас
+• Добрі відносини дають бонуси до відновлення
+• Дракон запам'ятовує, як ви з ним поводитеся
+
+🧬 **Еволюція:**
+• Дракон може розвиватися різними шляхами
+• Спеціальні предмети викликають мутації
+• Кожен шлях дає унікальні здібності
+
+Питання? Пишіть /start та досліджуйте світ разом з {self.dragon_name}! 🔥
+"""
+        
+        await update.message.reply_text(help_text, parse_mode='Markdown')
+
+    def run(self):
+        """Start the bot"""
+        application = Application.builder().token(self.token).build()
+        
+        # Add command handlers
+        application.add_handler(CommandHandler("start", self.start_command))
+        application.add_handler(CommandHandler("status", self.status_command))
+        application.add_handler(CommandHandler("shop", self.shop_command))
+        application.add_handler(CommandHandler("profile", self.profile_command))
+        application.add_handler(CommandHandler("adventure", self.adventure_command))
+        application.add_handler(CommandHandler("help", self.help_command))
+        
+        # Add callback query handler
+        application.add_handler(CallbackQueryHandler(self.handle_callback_query))
+        
+        # Add message handler for random interactions
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        
+        # Start the bot
+        print(f"🐲 {self.dragon_name} прокидається...")
+        application.run_polling()
+
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle random text messages for dragon interaction"""
+        message_text = update.message.text.lower()
+        user = update.effective_user
+        player = self.get_player(user.id, user.username)
+        
+        # Keywords that trigger dragon responses
+        greetings = ['привіт', 'хай', 'добрий день', 'доброго', 'вітаю']
+        feeding_words = ['годувати', 'їсти', 'голодний', 'їжа']
+        praise_words = ['добрий', 'хороший', 'молодець', 'красивий', 'розумний']
+        insults = ['поганий', 'дурний', 'глупий', 'бридкий']
+        
+        response = None
+        
+        if any(word in message_text for word in greetings):
+            dragon_response = self.get_dragon_response('greet', player)
+            response = f"🐲 {dragon_response}"
+            
+        elif any(word in message_text for word in feeding_words):
+            if self.dragon_stats['hunger'] < 30:
+                response = f"🐲 Так! Я дуже голодний! 🍖\nВикористайте /shop щоб купити їжу!"
+            else:
+                response = f"🐲 Дякую за турботу, але я ситий! 😊"
+                
+        elif any(word in message_text for word in praise_words):
+            self.dragon_stats['mood'] = min(100, self.dragon_stats['mood'] + 5)
+            player['dragon_affection'] += 2
+            responses = [
+                "🐲 Дякую! Ти теж хороший! 😊",
+                "🐲 Приємно це чути! ❤️",
+                "🐲 Ти завжди знаєш, що сказати! 😄"
+            ]
+            response = random.choice(responses)
+            self.save_player(player)
+            self.save_dragon_state()
+            
+        elif any(word in message_text for word in insults):
+            self.dragon_stats['mood'] = max(0, self.dragon_stats['mood'] - 10)
+            player['dragon_affection'] -= 5
+            responses = [
+                "🐲 Це було не мило... 😢",
+                "🐲 Чому ти так зі мною? 😔",
+                "🐲 Гррр... Мені це не подобається! 😠"
+            ]
+            response = random.choice(responses)
+            self.save_player(player)
+            self.save_dragon_state()
+        
+        # Random responses to keep dragon "alive"
+        elif random.random() < 0.1:  # 10% chance of random response
+            mood = self.dragon_stats['mood']
+            if mood > 70:
+                random_responses = [
+                    "🐲 Що робимо сьогодні? 😊",
+                    "🐲 Гарна погода для пригод! ⛅",
+                    "🐲 Може підемо кудись разом? 🚶"
+                ]
+            elif mood < 30:
+                random_responses = [
+                    "🐲 Мені сумно... 😢",
+                    "🐲 Щось не той настрій сьогодні... 😔",
+                    "🐲 Хотілося б трохи уваги... 🥺"
+                ]
+            else:
+                random_responses = [
+                    "🐲 Як справи? 😐",
+                    "🐲 Що нового? 🤔",
+                    "🐲 Просто привіт! 👋"
+                ]
+            response = random.choice(random_responses)
+        
+        if response:
+            keyboard = [[InlineKeyboardButton("📊 Стан дракона", callback_data="status")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(response, reply_markup=reply_markup)
+
+# Main execution
+if __name__ == "__main__":
+    # Replace with your bot token from @BotFather
+    BOT_TOKEN = ""
+    
+    if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+        print("❌ Будь ласка, вставте ваш токен бота від @BotFather")
+    else:
+        bot = DragonBot(BOT_TOKEN)
+        bot.run()
