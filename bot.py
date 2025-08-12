@@ -3,11 +3,11 @@ import sqlite3
 import json
 from datetime import datetime, timedelta
 from random import randint, choice
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext, CallbackQueryHandler
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext
 
 # ---------------- Настройки ----------------
-TOKEN = "YOUR_BOT_TOKEN"  # встав свій токен
+TOKEN = "YOUR_BOT_TOKEN"  # 🔹 Встав свій токен
 DB_FILE = "dragon_game.db"
 
 # ---------------- Логи ----------------
@@ -79,7 +79,13 @@ def check_level_up(user_id, xp, level):
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     get_player(user.id, user.username or user.full_name)
-    await update.message.reply_text("🐉 Вітаю у грі з драконом! Використай /feed щоб нагодувати, /daily щоб забрати бонус, /adventure щоб вирушити в пригоду.")
+    await update.message.reply_text(
+        "🐉 Вітаю у грі з драконом!\n\n"
+        "Команди:\n"
+        "/feed — нагодувати дракона\n"
+        "/daily — отримати щоденний бонус\n"
+        "/adventure — вирушити в пригоду"
+    )
 
 async def feed_dragon(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -107,3 +113,54 @@ async def daily(update: Update, context: CallbackContext):
     if last_daily:
         last_daily_dt = datetime.fromisoformat(last_daily)
         if now - last_daily_dt < timedelta(days=1):
+            await update.message.reply_text("⏳ Ти вже отримував бонус сьогодні. Повертайся завтра!")
+            return
+
+    gold_bonus = randint(50, 100)
+    xp_bonus = randint(10, 30)
+    update_player(user.id, gold=player[2] + gold_bonus, xp=player[4] + xp_bonus, last_daily=now.isoformat())
+
+    await update.message.reply_text(f"🎁 Щоденний бонус!\n+💰 {gold_bonus} золота\n+⭐ {xp_bonus} XP")
+
+async def adventure(update: Update, context: CallbackContext):
+    user = update.effective_user
+    player = get_player(user.id, user.username or user.full_name)
+
+    events = [
+        ("Ти знайшов скарб! 💎", lambda: (randint(50, 150), randint(20, 40))),
+        ("Ти переміг монстра! 🐲", lambda: (randint(30, 80), randint(40, 60))),
+        ("Ти потрапив у пастку 😢", lambda: (-randint(10, 30), randint(5, 15))),
+        ("Дракон знайшов їжу 🍖", lambda: (randint(20, 50), randint(10, 20))),
+    ]
+
+    event_text, reward_func = choice(events)
+    gold_change, xp_gain = reward_func()
+
+    new_gold = max(0, player[2] + gold_change)
+    new_xp = player[4] + xp_gain
+    leveled, new_level = check_level_up(user.id, new_xp, player[5])
+
+    update_player(user.id, gold=new_gold, xp=new_xp)
+
+    text = f"🗺 Пригода: {event_text}\n"
+    text += f"{'+' if gold_change >= 0 else ''}{gold_change} 💰 золота\n"
+    text += f"+{xp_gain} ⭐ XP"
+    if leveled:
+        text += f"\n🎉 Рівень підвищено до {new_level}!"
+
+    await update.message.reply_text(text)
+
+# ---------------- Запуск ----------------
+def main():
+    init_db()
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("feed", feed_dragon))
+    app.add_handler(CommandHandler("daily", daily))
+    app.add_handler(CommandHandler("adventure", adventure))
+
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
