@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext
 
 # ---------------- Настройки ----------------
-TOKEN = "YOUR_BOT_TOKEN"  # 🔹 Встав свій токен
+TOKEN = "7957837080:AAHT-AjnZYtBcBDDjL3MHURnV6XphI3KDrs"  # 🔹 Встав свій токен
 DB_FILE = "dragon_game.db"
 
 # ---------------- Логи ----------------
